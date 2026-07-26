@@ -14,6 +14,7 @@ from .key_utils import key_path_variants
 
 _zstd_dctx = zstd.ZstdDecompressor()
 _XML_UNSAFE_RE = re.compile(r'<!DOCTYPE|<!ENTITY', re.IGNORECASE)
+_XML_LIKE_RE = re.compile(r'\s*(<\?xml|<msg[\s>]|<msg/>|<sysmsg[\s>]|<voipmsg[\s>])', re.IGNORECASE)
 _XML_PARSE_MAX_LEN = 20000
 _QUERY_LIMIT_MAX = 500
 _HISTORY_QUERY_BATCH_SIZE = 500
@@ -149,6 +150,33 @@ def _parse_int(value, fallback=0):
         return fallback
 
 
+def _looks_like_xml(text):
+    return bool(text) and bool(_XML_LIKE_RE.match(text))
+
+
+def _describe_nested_content(content, ref_type=0):
+    """把嵌套/引用消息里的原始 XML 压成一句可读描述。
+
+    图片、视频、卡片等非文本消息的 content 是整段 XML（CDN 密钥、内部 ID 等），
+    直接透出会淹没真正的聊天内容，这里只保留一个简短标签或标题。
+    """
+    if not _looks_like_xml(content):
+        return _collapse_text(content)
+    if '<appmsg' in content:
+        described = _format_app_message_text(content, ref_type, False, '', '', {}, None)
+        if described:
+            return _collapse_text(described)
+    base_type, _ = _split_msg_type(ref_type)
+    if base_type:
+        return f"[{format_msg_type(ref_type)}]"
+    root = _parse_xml_root(content)
+    if root is not None:
+        title = _collapse_text(root.findtext('.//title') or '')
+        if title:
+            return title
+    return '[非文本消息]'
+
+
 def _format_app_message_text(content, local_type, is_group, chat_username, chat_display_name, names, _display_name_fn, resolve_media=False, db_dir=None, create_time_ts=0):
     if not content or '<appmsg' not in content:
         return None
@@ -169,7 +197,9 @@ def _format_app_message_text(content, local_type, is_group, chat_username, chat_
         ref_display_name = ''
         if ref is not None:
             ref_display_name = (ref.findtext('displayname') or '').strip()
-            ref_content = _collapse_text(ref.findtext('content') or '')
+            ref_content = _describe_nested_content(
+                ref.findtext('content') or '', _parse_int((ref.findtext('type') or '').strip())
+            )
         if len(ref_content) > 160:
             ref_content = ref_content[:160] + "..."
         quote_text = title or "[引用消息]"
@@ -349,7 +379,11 @@ def _format_message_text(local_id, local_type, content, is_group, chat_username,
         ) or "[链接/文件]"
     elif base_type != 1:
         type_label = format_msg_type(local_type)
-        text = f"[{type_label}] {text}" if text else f"[{type_label}]"
+        # 视频、系统消息等的 content 是整段 XML（CDN 密钥、内部 ID），对阅读没有价值。
+        if _looks_like_xml(text):
+            text = f"[{type_label}]"
+        else:
+            text = f"[{type_label}] {text}" if text else f"[{type_label}]"
     return sender, text
 
 
