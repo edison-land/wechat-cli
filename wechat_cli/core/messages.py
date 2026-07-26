@@ -196,10 +196,8 @@ def _format_app_message_text(content, local_type, is_group, chat_username, chat_
                                 return f"[文件] {title}\n  {os.path.join(file_dir, f)}"
         return f"[文件] {title}" if title else "[文件]"
     if app_type in (2000, 2001):
-        # 微信转账 (2000) / 红包 (2001)：领取链接对日报没有意义，只保留提示语。
-        des = _collapse_text(appmsg.findtext('des') or '')
-        label = "[微信转账]" if app_type == 2000 else "[微信红包]"
-        return f"{label} {des}" if des else label
+        # 微信转账 (2000) / 红包 (2001)：领取链接对日报没有意义，用一句俏皮话代替。
+        return "「TA转了一笔钱，没说多少」" if app_type == 2000 else "「TA发了一个红包，不知道多少钱」"
     if app_type == 5:
         label = f"[链接] {title}" if title else "[链接]"
         return f"{label}\n  {url}" if url else label
