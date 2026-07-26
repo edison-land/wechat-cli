@@ -160,6 +160,7 @@ def _format_app_message_text(content, local_type, is_group, chat_username, chat_
     if appmsg is None:
         return None
     title = _collapse_text(appmsg.findtext('title') or '')
+    url = _collapse_text(appmsg.findtext('url') or '')
     app_type = _parse_int((appmsg.findtext('type') or '').strip(), _parse_int(sub_type, 0))
 
     if app_type == 57:
@@ -195,12 +196,13 @@ def _format_app_message_text(content, local_type, is_group, chat_username, chat_
                                 return f"[文件] {title}\n  {os.path.join(file_dir, f)}"
         return f"[文件] {title}" if title else "[文件]"
     if app_type == 5:
-        return f"[链接] {title}" if title else "[链接]"
+        label = f"[链接] {title}" if title else "[链接]"
+        return f"{label}\n  {url}" if url else label
     if app_type in (33, 36, 44):
-        return f"[小程序] {title}" if title else "[小程序]"
-    if title:
-        return f"[链接/文件] {title}"
-    return "[链接/文件]"
+        label = f"[小程序] {title}" if title else "[小程序]"
+        return f"{label}\n  {url}" if url else label
+    label = f"[链接/文件] {title}" if title else "[链接/文件]"
+    return f"{label}\n  {url}" if url else label
 
 
 def _format_voip_message_text(content):
