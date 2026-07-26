@@ -15,6 +15,8 @@ from .key_utils import key_path_variants
 _zstd_dctx = zstd.ZstdDecompressor()
 _XML_UNSAFE_RE = re.compile(r'<!DOCTYPE|<!ENTITY', re.IGNORECASE)
 _XML_LIKE_RE = re.compile(r'\s*(<\?xml|<msg[\s>]|<msg/>|<sysmsg[\s>]|<voipmsg[\s>])', re.IGNORECASE)
+# 群聊里被引用的内容形如 "wxid_xxx:\n<xml>"，发送者前缀与 displayname 重复，需先剥离。
+_NESTED_SENDER_RE = re.compile(r'^[^\s:]{1,64}:\s*(?=<)')
 _XML_PARSE_MAX_LEN = 20000
 _QUERY_LIMIT_MAX = 500
 _HISTORY_QUERY_BATCH_SIZE = 500
@@ -160,6 +162,8 @@ def _describe_nested_content(content, ref_type=0):
     图片、视频、卡片等非文本消息的 content 是整段 XML（CDN 密钥、内部 ID 等），
     直接透出会淹没真正的聊天内容，这里只保留一个简短标签或标题。
     """
+    # 只在后面确实跟着 XML 时才剥前缀，保证纯文本引用的行为完全不变。
+    content = _NESTED_SENDER_RE.sub('', content or '', count=1)
     if not _looks_like_xml(content):
         return _collapse_text(content)
     if '<appmsg' in content:
