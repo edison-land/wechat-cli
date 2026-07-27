@@ -52,15 +52,22 @@ def history(ctx, chat_name, limit, offset, start_time, end_time, fmt, msg_type, 
         ctx.exit(1)
 
     names = get_contact_names(app.cache, app.decrypted_dir)
+    display_name_fn = app.display_name_fn
     if chat_ctx['is_group']:
         # 群聊输出面向整个群，用群昵称/对方昵称称呼成员，不用本机的通讯录备注。
         names = {
             **names,
             **get_group_display_names(chat_ctx['username'], app.cache, app.decrypted_dir),
         }
+
+        def display_name_fn(username, names_map, _fallback=app.display_name_fn):
+            # 群聊里“我”也按群昵称称呼；"me" 只有在自己读私聊时才有意义，
+            # 出现在面向全群的输出里反而没人看得懂。
+            return names_map.get(username) or _fallback(username, names_map)
+
     type_filter = MSG_TYPE_FILTERS[msg_type] if msg_type else None
     lines, failures = collect_chat_history(
-        chat_ctx, names, app.display_name_fn,
+        chat_ctx, names, display_name_fn,
         start_ts=start_ts, end_ts=end_ts, limit=limit, offset=offset,
         msg_type_filter=type_filter, resolve_media=media, db_dir=app.db_dir,
     )
