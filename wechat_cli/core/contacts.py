@@ -8,6 +8,100 @@ import sqlite3
 _contact_names = None  # {username: display_name}
 _contact_full = None   # [{username, nick_name, remark}]
 _self_username = None
+_chatroom_nicknames = {}  # {chatroom_username: {member_username: 群昵称}}
+
+
+def _read_varint(buf, index):
+    """读取一个 protobuf varint，越界或超长时返回 (None, len(buf))。"""
+    result = shift = 0
+    while index < len(buf):
+        byte = buf[index]
+        index += 1
+        result |= (byte & 0x7F) << shift
+        if not byte & 0x80:
+            return result, index
+        shift += 7
+        if shift > 63:
+            break
+    return None, len(buf)
+
+
+def _iter_protobuf_fields(buf):
+    """遍历 protobuf 顶层字段，产出 (字段号, 值)。遇到无法识别的内容就停止。"""
+    index = 0
+    while index < len(buf):
+        tag, index = _read_varint(buf, index)
+        if tag is None:
+            return
+        field, wire = tag >> 3, tag & 7
+        if wire == 0:
+            value, index = _read_varint(buf, index)
+            if value is None:
+                return
+            yield field, value
+        elif wire == 2:
+            length, index = _read_varint(buf, index)
+            if length is None or index + length > len(buf):
+                return
+            yield field, buf[index:index + length]
+            index += length
+        elif wire == 5:
+            index += 4
+        elif wire == 1:
+            index += 8
+        else:
+            return
+
+
+def _parse_chatroom_nicknames(buf):
+    """从 chat_room.ext_buffer 解析出 {成员 username: 群昵称}。
+
+    每条成员记录是顶层字段 1 的子消息，其中子字段 1 是 username、子字段 2 是群昵称。
+    没设群昵称的成员不会有子字段 2，直接跳过，让调用方回退到通讯录名称。
+    """
+    nicknames = {}
+    for field, value in _iter_protobuf_fields(buf or b""):
+        if field != 1 or not isinstance(value, bytes):
+            continue
+        username = nickname = None
+        for sub_field, sub_value in _iter_protobuf_fields(value):
+            if not isinstance(sub_value, bytes):
+                continue
+            if sub_field == 1:
+                username = sub_value
+            elif sub_field == 2:
+                nickname = sub_value
+        if username and nickname:
+            nicknames[username.decode("utf-8", "ignore")] = nickname.decode("utf-8", "ignore")
+    return nicknames
+
+
+def get_chatroom_nicknames(chatroom_username, cache, decrypted_dir):
+    """群昵称映射；群聊里它比通讯录备注更贴近群成员看到的称呼。"""
+    if chatroom_username in _chatroom_nicknames:
+        return _chatroom_nicknames[chatroom_username]
+
+    pre_decrypted = os.path.join(decrypted_dir, "contact", "contact.db")
+    db_path = pre_decrypted if os.path.exists(pre_decrypted) else cache.get(
+        os.path.join("contact", "contact.db")
+    )
+    nicknames = {}
+    if db_path:
+        try:
+            conn = sqlite3.connect(db_path)
+            try:
+                row = conn.execute(
+                    "SELECT ext_buffer FROM chat_room WHERE username = ?", (chatroom_username,)
+                ).fetchone()
+            finally:
+                conn.close()
+            if row and row[0]:
+                nicknames = _parse_chatroom_nicknames(row[0])
+        except sqlite3.Error:
+            nicknames = {}
+
+    _chatroom_nicknames[chatroom_username] = nicknames
+    return nicknames
 
 
 def _load_contacts_from(db_path):

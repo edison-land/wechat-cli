@@ -2,7 +2,7 @@
 
 import click
 
-from ..core.contacts import get_contact_names
+from ..core.contacts import get_chatroom_nicknames, get_contact_names
 from ..core.messages import (
     MSG_TYPE_FILTERS,
     MSG_TYPE_NAMES,
@@ -52,6 +52,13 @@ def history(ctx, chat_name, limit, offset, start_time, end_time, fmt, msg_type, 
         ctx.exit(1)
 
     names = get_contact_names(app.cache, app.decrypted_dir)
+    if chat_ctx['is_group']:
+        # 群聊里成员的群昵称比我自己的通讯录备注更贴近群内实际称呼；
+        # 没设群昵称的成员不在这张表里，会自动回退到备注/昵称。
+        names = {
+            **names,
+            **get_chatroom_nicknames(chat_ctx['username'], app.cache, app.decrypted_dir),
+        }
     type_filter = MSG_TYPE_FILTERS[msg_type] if msg_type else None
     lines, failures = collect_chat_history(
         chat_ctx, names, app.display_name_fn,
