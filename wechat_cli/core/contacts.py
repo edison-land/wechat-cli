@@ -76,6 +76,20 @@ def _parse_chatroom_nicknames(buf):
     return nicknames
 
 
+def get_group_display_names(chatroom_username, cache, decrypted_dir):
+    """群聊中成员的对外称呼：群昵称 > 对方的微信昵称 > username。
+
+    刻意不使用通讯录备注——那是阅读者本人给联系人起的名字，属于个人设置，
+    不应出现在面向整个群的输出里。
+    """
+    names = {}
+    for contact in get_contact_full(cache, decrypted_dir):
+        # 每个联系人都要显式覆盖，否则没有昵称的人会穿透到备注优先的映射。
+        names[contact['username']] = contact['nick_name'] or contact['username']
+    names.update(get_chatroom_nicknames(chatroom_username, cache, decrypted_dir))
+    return names
+
+
 def get_chatroom_nicknames(chatroom_username, cache, decrypted_dir):
     """群昵称映射；群聊里它比通讯录备注更贴近群成员看到的称呼。"""
     if chatroom_username in _chatroom_nicknames:
